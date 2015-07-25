@@ -91,13 +91,16 @@ print(performanceCART$table)
 ```
 
 ```{r, echo=FALSE, include=FALSE}
-# model <- train(trainPart[,7:58], trainPart$classe)
-# save(model,file = "model")
-load("model")
+initTime <- proc.time()
+model <- train(trainPart[,7:58], trainPart$classe)
+elapsedTime <- proc.time() - initTime
 testResult <- predict(model,newdata = testPart)
 performance <- confusionMatrix(testResult,testPart$classe)
+save(model,performance,elapsedTime,file = "model")
+# load("model")
+
 ```
-Next, Random Forest was employed. Although a long time was taken to train the model, performance was considered very good. Overall performance reached `r performance$overall[1]`. Corresponding confusion matrix is presented below:
+Next, Random Forest was employed. Although a long time was taken to train the model (elapsed time was `r elapsedTime[[3]]` seconds), resulting performance was very good. Overall accuracy reached `r performance$overall[1]`. Corresponding confusion matrix is presented below:
 ```{r, echo=FALSE}
 print(performance$table)
 ```
