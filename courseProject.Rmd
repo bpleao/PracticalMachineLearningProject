@@ -1,0 +1,123 @@
+---
+title: "Course Project - Practical Machine Learning"
+author: "Bruno Paes Leão"
+date: "July 16, 2015"
+output: html_document
+---
+
+#Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+The goal of this project is to use sensor data to identify how well someone is performing barbell lifts. Data from sensors on the belt, forearm, arm, and dumbbell of 6 participants is employed. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: [http://groupware.les.inf.puc-rio.br/har](http://groupware.les.inf.puc-rio.br/har) (see the section on the Weight Lifting Exercise Dataset). 
+
+This is an assignment of Johns Hopkins University [Practical Machine Learning course](https://class.coursera.org/predmachlearn-030/) at Coursera.
+
+#Analysis
+
+```{r, echo=FALSE, include=FALSE}
+library(caret)
+# reading the data and splitting the training data
+trainFull <- read.csv("pml-training.csv",na.strings = c("NA","#DIV/0!"))
+```
+
+##Datasets
+
+Two datasets were employed. The [training dataset](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) contains `r nrow(trainFull)` samples and `r ncol(trainFull)` variables. The variable "classe" is the label, containing 5 levels, A to E, corresponding to each different class of correct/incorrect exercise execution. The [testing dataset](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv) contains 20 unlabeled samples. The final goal of this assignment is to build a classification model to estimate the labels for this test dataset. 
+
+##Data Analysis
+
+First of all, inspection of the available variables in both training and testing datasets is performed. Relevant information can be obtained from this initial inspection:
+
+* A number of NA and apparently anomalous values (e.g. "#DIV/0!") can be found in the datasets.
+
+* The first seven variables provide information such as participant name, time stamps, and sequential numbers which are not usefull for building the classification model. Variable "new window" which assumes a yes/no value, though not directly employed in the model, is employed for sample selection as described below.
+
+* Last variable "classe" presents the labels in the training dataset. This variable is missing in the test dataset, as expected.
+
+* The other variables refer to sensor measurements. Not only direct measurements are provided but also summary information and statistics, such as mininum and maximum values, standard deviation, skewness and kurtosis for the different sensors at each different location. This results in a relatively large number of features (`r ncol(trainFull) - 8`).
+
+* The variable "new window", mentioned above, separates the samples in two groups. Some of the measurements are only available for entries where "new window" equals "yes". However, the test dataset only comprises entries where "new window" equals "no". Therefore, only the subset of entries where "new window" equals "no" was employed in the model development.
+
+```{r, echo=FALSE}
+trainPartIdx <- createDataPartition(trainFull$classe, p = 0.8)[[1]]
+trainPart <- trainFull[trainPartIdx,]
+testPart <- trainFull[-trainPartIdx,]
+finalTest <- read.csv("pml-testing.csv",na.strings = c("NA","#DIV/0!"))
+
+# eliminating useless rows/columns
+nzCols <- nearZeroVar(trainPart)
+finalTest <- subset(finalTest, new_window = "no", select = -nzCols)
+notNaCols <- colSums(is.na(finalTest))<nrow(finalTest)
+finalTest <- finalTest[,notNaCols]
+trainPart <- subset(trainPart, new_window = "no", select = -nzCols)
+trainPart <- trainPart[,notNaCols]
+testPart <- subset(testPart, new_window = "no", select = -nzCols)
+testPart <- testPart[,notNaCols]
+```
+
+The training dataset was partitioning to use 80% of the dataset for training the model, leaving 20% of the samples as hold-out for validation. Near zero variance predictiors and variables containing only NA readings were eliminated. This yielded a final set of `r ncol(trainPart) - 7` variables to be used as predictors in the models.
+
+Exploratory data analysis was performed by plotting the features as a function of the label for each sensor location. Plots can be found below.
+
+```{r, echo=FALSE}
+# ploting by body region
+beltFrame <- subset(trainPart, select = grep('_belt',names(trainPart)))
+featurePlot(beltFrame, trainPart$classe, scales=list(relation="free"), main="Feature Plot for Belt Sensors Related Predictors")
+armFrame <- subset(trainPart, select = grep('_arm',names(trainPart)))
+featurePlot(armFrame, trainPart$classe, scales=list(relation="free"), main="Feature Plot for Arm Sensors Related Predictors")
+forearmFrame <- subset(trainPart, select = grep('_forearm',names(trainPart)))
+featurePlot(forearmFrame, trainPart$classe, scales=list(relation="free"), main="Feature Plot for Forearm Sensors Related Predictors")
+dumbbellFrame <- subset(trainPart, select = grep('_dumbbell',names(trainPart)))
+featurePlot(dumbbellFrame, trainPart$classe, scales=list(relation="free"), main="Feature Plot for Dumbbell Sensors Related Predictors")
+```
+
+It can be verified from the plots that the behavior of the considered features (or at least the large majority of them) varies as a function of the label, indicating they are potentially good predictors for the model.
+
+Since the number of predictors can still be considered high, one approach could be to employ methods for dimentionality reduction (e.g. PCA) before building the actual models. However, the approach taken here was trying to build models using all predictors first and only if not successful proceed with dimentionality reduction.
+
+
+```{r, echo=FALSE, include=FALSE}
+modelCART <- train(trainPart[,7:58], trainPart$classe, method = "rpart")
+testResultCART <- predict(modelCART,newdata = testPart)
+performanceCART <- confusionMatrix(testResultCART,testPart$classe)
+
+```
+
+Initially a CART model was tried. However, results were not satisfactory. Overall accuracy reached only `r performanceCART$overall[1]`. Corresponding confusion matrix is presented below:
+
+```{r, echo=FALSE}
+print(performanceCART$table)
+```
+
+```{r, echo=FALSE, include=FALSE}
+# model <- train(trainPart[,7:58], trainPart$classe)
+# save(model,file = "model")
+load("model")
+testResult <- predict(model,newdata = testPart)
+performance <- confusionMatrix(testResult,testPart$classe)
+```
+Next, Random Forest was employed. Although a long time was taken to train the model, performance was considered very good. Overall performance reached `r performance$overall[1]`. Corresponding confusion matrix is presented below:
+```{r, echo=FALSE}
+print(performance$table)
+```
+Therefore, this model was used to estimate the labels of the test dataset. Corresponding result for each of the twenty cases is presented below:
+```{r, echo=FALSE}
+# predicting final test data
+finalTestResult <- predict(model,newdata = finalTest)
+print(finalTestResult)
+```
+Uploading these results to the course project web page confirmed the good performance of the model: all results were confirmed to be correct.
+```{r, echo=FALSE}
+
+# creating result files
+pml_write_files <- function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("finalTestResults/problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(finalTestResult)
+
+```
